@@ -7,39 +7,50 @@
 
 #include <TM1637Display.h> // https://github.com/avishorp/TM1637
 #include <DHT.h> // https://github.com/adafruit/DHT-sensor-library
+#include <PID_v1.h> // https://github.com/br3ttb/Arduino-PID-Library
 
 // Pins
-const int txd = 0;
-const int rxd = 1;
-const int upBtn = 2; // Because its also INT0
-const int downBtn = 3; // Because its also INT1
-const int displayClk = 4;
-const int displayDio = 5;
-const int dht22 = 7;
-const int fan = 9; // Because is PWM
+const int txd_pin = 0;
+const int rxd_pin = 1;
+const int upBtn_pin = 2; // Because its also INT0
+const int downBtn_pin = 3; // Because its also INT1
+const int displayClk_pin = 4;
+const int displayDio_pin = 5;
+const int dht22_pin = 7;
+const int fan_pin = 9; // Because is PWM
 
 // Globals
-DHT dht(dht22, DHT22);
-uint32_t delayms = 2000; // Delay for DHT readings
-TM1637Display display(displayClk,displayDio);
-uint8_t fan_power = 0x00;
+//  PID
+volatile float setpoint = 20.0;
+double input, output;
+double Kp=2, Ki=5, Kd=1;
+//  Reverse since the plant tend to rise the temperature, and the action of the PID tends to drop it
+PID controller(&input, &output, &setpoint, Kp, Ki, Kd, REVERSE);
 
-volatile float desiredt = 20.0;
-volatile int desiredtDisplay = 0;
+//  DHT
+DHT dht(dht22_pin, DHT22);
+uint32_t delayms = 2000; // Delay for DHT readings
+
+//  Display
+TM1637Display display(displayClk_pin, displayDio_pin);
+
+//  Input buttons
 unsigned long debouncingus = 15000;
 volatile unsigned long lastus; // No worries about rollovers http://www.utopiamechanicus.com/article/handling-arduino-microsecond-overflow/
 
 
-#define DEBOUNCE_OPEN if((unsigned long)(micros() - lastus) >= debouncingus) {
-#define DEBOUNCE_CLOSE     lastus = micros();desiredtDisplay=2;}
+#define DEBOUNCE_OPEN  if((unsigned long)(micros() - lastus) >= debouncingus) {
+#define DEBOUNCE_CLOSE lastus = micros();}
 void upISR() {
   DEBOUNCE_OPEN 
-  desiredt += 1.0;
+  setpoint += 1.0;
+  show(input, setpoint);
   DEBOUNCE_CLOSE
 }
 void downISR() {
   DEBOUNCE_OPEN 
-  desiredt -= 1.0;
+  setpoint -= 1.0;
+  show(input, setpoint);
   DEBOUNCE_CLOSE
 }
 
@@ -48,10 +59,10 @@ void setup() {
   Serial.begin(9600); 
   // Input pins setup
   lastus = micros();
-  pinMode(upBtn, INPUT);
-  pinMode(downBtn, INPUT);
-  attachInterrupt(digitalPinToInterrupt(upBtn), upISR, RISING);
-  attachInterrupt(digitalPinToInterrupt(downBtn), downISR, RISING);
+  pinMode(upBtn_pin, INPUT);
+  pinMode(downBtn_pin, INPUT);
+  attachInterrupt(digitalPinToInterrupt(upBtn_pin), upISR, RISING);
+  attachInterrupt(digitalPinToInterrupt(downBtn_pin), downISR, RISING);
   // Display setup
   display.setBrightness(2);
   // DHT22 setup
@@ -73,7 +84,17 @@ void setup() {
     delayms = sensor.min_delay / 1000 + 500;
   }
   // Fan setup
-  pinMode(fan, OUTPUT);
+  pinMode(fan_pin, OUTPUT);
+  // PID setup
+  controller.SetMode(AUTOMATIC);
+  controller.SetOutputLimits(0, 255);
+  controller.SetSampleTime(delayms) 
+}
+
+void show(float input, float setpoint) {
+  int inputint = int(input);
+  int setpointint = int(setpoint);
+  display.showNumberDecEx(setpointint*100+inputint, 0b01000000);
 }
 
 void loop() {
@@ -81,42 +102,17 @@ void loop() {
   delay(delayms);
 
   // Obtain the current temperature
-  float t = dht.readTemperature();
-  if (isnan(t)) {
+  input = dht.readTemperature();
+  if (isnan(input)) {
     Serial.println("Failed to read from DHT sensor!");
   }
   else {
-    // Regulate
-    float err = t-desiredt;
-    if (err<0.0) {
-      fan_power=(uint8_t)0*256/100;
-    }
-    if (0.0<=err && err<1.0) {
-      fan_power=(uint8_t)25*256/100;
-    }
-    if (1.0<=err && err<2.0) {
-      fan_power=(uint8_t)50*256/100;
-    }
-    if (2.0<=err && err<3.0) {
-      fan_power=(uint8_t)75*256/100;
-    }
-    if (3.0<=err) {
-      fan_power=(uint8_t)100*256/100;
-    }
-    analogWrite(fan, fan_power);
+    controller.Compute();
+    
+    analogWrite(fan_pin, output);
 
-    // Output the desired or current temperature
-    if (desiredtDisplay > 0) {
-      display.setBrightness(7);
-      display.showNumberDecEx(desiredt, 0b10100000, false, 4, 1);
-      display.setSegments(0b00000010, 1, 0);
-      display.setSegments(0b00000010, 1, 3);
-      desiredtDisplay--;
-    }
-    else {
-      display.setBrightness(2);
-      display.showNumberDec(t);
-    }
+    show(input, setpoint);
+    Serial.println("Input:%f, Setpoint:%f, Output:%f", input, setpoint, output);
   }
 }
 
