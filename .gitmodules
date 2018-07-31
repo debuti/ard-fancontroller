@@ -1,0 +1,12 @@
+[submodule "libs/TM1637"]
+	path = libs/TM1637
+	url = https://github.com/avishorp/TM1637
+[submodule "libs/Adafruit_Sensor"]
+	path = libs/Adafruit_Sensor
+	url = https://github.com/adafruit/Adafruit_Sensor
+[submodule "libs/DHT-sensor-library"]
+	path = libs/DHT-sensor-library
+	url = https://github.com/adafruit/DHT-sensor-library
+[submodule "libs/Arduino-PID-Library"]
+	path = libs/Arduino-PID-Library
+	url = https://github.com/br3ttb/Arduino-PID-Library
