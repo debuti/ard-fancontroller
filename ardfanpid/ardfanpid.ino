@@ -74,7 +74,7 @@ void setup() {
   pinMode(fan_pin, OUTPUT);
   // PID setup
   controller.SetMode(AUTOMATIC);
-  controller.SetOutputLimits(0, 255);
+  controller.SetOutputLimits(50, 235);
   controller.SetSampleTime(delayms);
 }
 
